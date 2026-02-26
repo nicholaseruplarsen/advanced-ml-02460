@@ -186,7 +186,7 @@ class Flow(nn.Module):
     
     def loss(self, x):
         """
-        Compute the negative mean log likelihood for the given data bath.
+        Compute the negative mean log likelihood for the given data batch.
 
         Parameters:
         x: [torch.Tensor] 

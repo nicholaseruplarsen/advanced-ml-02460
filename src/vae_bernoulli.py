@@ -318,10 +318,10 @@ if __name__ == "__main__":
             transforms.Lambda(lambda x: x.squeeze()),
         ])
     else:
-        thresshold = 0.5
+        threshold = 0.5
         transform = transforms.Compose([
             transforms.ToTensor(),
-            transforms.Lambda(lambda x: (thresshold < x).float().squeeze()),
+            transforms.Lambda(lambda x: (threshold < x).float().squeeze()),
         ])
 
     mnist_train_loader = torch.utils.data.DataLoader(
