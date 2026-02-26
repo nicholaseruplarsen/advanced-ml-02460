@@ -19,6 +19,7 @@ tex/*.fls
 tex/*.fdb_latexmk
 tex/*.synctex.gz
 tex/*.pdf
+tex/*.xdv
 
 # Model checkpoints — keep .pth files
 !*.pth
