@@ -58,15 +58,6 @@ class MoGPrior(nn.Module):
         return td.MixtureSameFamily(mix, comp)
 
 
-class FlowPrior(nn.Module):
-    """Normalizing flow prior (Exercise 2.6)."""
-    def __init__(self, flow):
-        super().__init__()
-        self.flow = flow
-
-    def forward(self):
-        return self.flow
-
 
 class GaussianEncoder(nn.Module):
     def __init__(self, encoder_net):
