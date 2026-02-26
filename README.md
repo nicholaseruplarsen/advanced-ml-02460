@@ -21,5 +21,5 @@ Source: `tex/template.tex` (bibliography: `tex/template.bib`)
 Build from the `tex/` directory:
 
 ```bash
-cd tex && pdflatex template.tex && bibtex template && pdflatex template.tex && pdflatex template.tex
+cd tex && latexmk -pdf template.tex
 ```
