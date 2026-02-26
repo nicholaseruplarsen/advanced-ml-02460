@@ -1,0 +1,27 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+dist/
+
+# uv / venv
+.venv/
+.python-version
+
+# LaTeX
+tex/*.aux
+tex/*.bbl
+tex/*.blg
+tex/*.log
+tex/*.out
+tex/*.toc
+tex/*.fls
+tex/*.fdb_latexmk
+tex/*.synctex.gz
+tex/*.pdf
+
+# Model checkpoints — keep .pth files
+!*.pth
+
+# macOS
+.DS_Store
