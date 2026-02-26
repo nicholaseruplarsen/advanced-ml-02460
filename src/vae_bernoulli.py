@@ -6,6 +6,7 @@
 
 import argparse
 import math
+import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA
 import torch
@@ -460,7 +461,7 @@ def plot_posterior(model, data_loader, device, output_file):
     with torch.no_grad():
         for x, y in data_loader:
             x = x.to(device)
-            zs.append(model.encoder(x).mean.cpu())
+            zs.append(model.encoder(x).sample().cpu())
             labels.append(y)
     zs = torch.cat(zs).numpy()
     labels = torch.cat(labels).numpy()
@@ -478,11 +479,50 @@ def plot_posterior(model, data_loader, device, output_file):
     print(f'Posterior plot saved to {output_file}')
 
 
+def plot_prior_posterior(model, data_loader, device, output_file):
+    """Plot prior samples against aggregate posterior samples.
+
+    For M > 2, project to 2D with PCA.
+    """
+    model.eval()
+    posterior = []
+    n_total = 0
+    with torch.no_grad():
+        for x, _ in data_loader:
+            x = x.to(device)
+            z = model.encoder(x).sample()
+            posterior.append(z.cpu())
+            n_total += z.size(0)
+            # breakpoint()
+        # breakpoint()
+    posterior = torch.cat(posterior, dim=0).numpy()
+
+    with torch.no_grad():
+        prior = model.prior().sample(torch.Size([n_total])).cpu().numpy()
+
+    if posterior.shape[1] > 2:
+        both = np.concatenate([posterior, prior], axis=0)
+        both_2d = PCA(n_components=2).fit_transform(both)
+        n_post = len(posterior)
+        posterior = both_2d[:n_post]
+        prior = both_2d[n_post:]
+
+    plt.figure(figsize=(8, 6))
+    plt.scatter(prior[:, 0], prior[:, 1], s=1, alpha=0.35, label='Prior samples')
+    plt.scatter(posterior[:, 0], posterior[:, 1], s=1, alpha=0.35, label='Posterior samples')
+    plt.xlabel('z1')
+    plt.ylabel('z2')
+    plt.legend(loc='best')
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f'Prior vs posterior plot saved to {output_file}')
+
+
 if __name__ == "__main__":
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', type=str, default='train',
-                        choices=['train', 'sample', 'sample_mean', 'evaluate', 'plot_posterior'],
+                        choices=['train', 'sample', 'sample_mean', 'evaluate', 'plot_posterior', 'plot_prior_posterior'],
                         help='what to do when running the script (default: %(default)s)')
     parser.add_argument('--model', type=str, default='model.pt',
                         help='file to save model to or load model from (default: %(default)s)')
@@ -490,6 +530,8 @@ if __name__ == "__main__":
                         help='file to save samples in (default: %(default)s)')
     parser.add_argument('--posterior-plot', type=str, default='posterior.png',
                         help='file to save posterior plot in (default: %(default)s)')
+    parser.add_argument('--prior-posterior-plot', type=str, default='prior_posterior.png',
+                        help='file to save prior vs posterior plot in (default: %(default)s)')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'],
                         help='torch device (default: %(default)s)')
     parser.add_argument('--batch-size', type=int, default=32, metavar='N',
@@ -606,3 +648,6 @@ if __name__ == "__main__":
 
         elif args.mode == 'plot_posterior':
             plot_posterior(model, mnist_test_loader, device, args.posterior_plot)
+
+        elif args.mode == 'plot_prior_posterior':
+            plot_prior_posterior(model, mnist_test_loader, device, args.prior_posterior_plot)
