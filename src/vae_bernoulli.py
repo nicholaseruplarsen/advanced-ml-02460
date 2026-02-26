@@ -8,7 +8,7 @@ import argparse
 import math
 import numpy as np
 import matplotlib.pyplot as plt
-from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
 import torch
 import torch.nn as nn
 import torch.distributions as td
@@ -18,7 +18,7 @@ from tqdm import tqdm
 from torchvision import datasets, transforms
 from torchvision.utils import save_image
 
-from src.flow import FlowPrior
+from flow import FlowPrior
 
 
 class GaussianPrior(nn.Module):
@@ -255,7 +255,7 @@ def plot_posterior(model, data_loader, device, output_file):
     labels = torch.cat(labels).numpy()
 
     if zs.shape[1] > 2:
-        zs = PCA(n_components=2).fit_transform(zs)
+        zs = TSNE(n_components=2).fit_transform(zs)
 
     plt.figure(figsize=(8, 6))
     sc = plt.scatter(zs[:, 0], zs[:, 1], c=labels, cmap='tab10', s=1, alpha=0.5)
@@ -265,6 +265,33 @@ def plot_posterior(model, data_loader, device, output_file):
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     plt.close()
     print(f'Posterior plot saved to {output_file}')
+
+def plot_prior(model, data_loader, output_file):
+    """Plot prior samples coloured by class label.
+
+    For M > 2, projects onto first two t-SNE components.
+    """
+
+    model.eval()
+    num_samples = 0
+    with torch.no_grad():
+        for x, y in data_loader:
+            num_samples += x.shape[0]
+    
+    with torch.no_grad():
+        zs = model.prior().sample(torch.Size([num_samples])).cpu().numpy()
+
+
+    if zs.shape[1] > 2:
+        zs = TSNE(n_components=2).fit_transform(zs)
+
+    plt.figure(figsize=(8, 6))
+    sc = plt.scatter(zs[:, 0], zs[:, 1], s=1, alpha=0.5)
+    plt.xlabel('z1')
+    plt.ylabel('z2')
+    plt.savefig(output_file, dpi=150, bbox_inches='tight')
+    plt.close()
+    print(f'Prior plot saved to {output_file}')
 
 
 def plot_prior_posterior(model, data_loader, device, output_file):
@@ -310,7 +337,7 @@ if __name__ == "__main__":
     # Parse arguments
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', type=str, default='train',
-                        choices=['train', 'sample', 'sample_mean', 'evaluate', 'plot_posterior', 'plot_prior_posterior'],
+                        choices=['train', 'sample', 'sample_mean', 'evaluate', 'plot_posterior', 'plot_prior_posterior', 'plot_prior'],
                         help='what to do when running the script (default: %(default)s)')
     parser.add_argument('--model', type=str, default='model.pt',
                         help='file to save model to or load model from (default: %(default)s)')
@@ -318,6 +345,8 @@ if __name__ == "__main__":
                         help='file to save samples in (default: %(default)s)')
     parser.add_argument('--posterior-plot', type=str, default='posterior.png',
                         help='file to save posterior plot in (default: %(default)s)')
+    parser.add_argument('--prior-plot', type=str, default='prior.png',
+                        help='file to save prior plot in (default: %(defaults)s)')
     parser.add_argument('--prior-posterior-plot', type=str, default='prior_posterior.png',
                         help='file to save prior vs posterior plot in (default: %(default)s)')
     parser.add_argument('--device', type=str, default='cpu', choices=['cpu', 'cuda', 'mps'],
@@ -436,6 +465,10 @@ if __name__ == "__main__":
 
         elif args.mode == 'plot_posterior':
             plot_posterior(model, mnist_test_loader, device, args.posterior_plot)
+        
+        elif args.mode == 'plot_prior':
+            plot_prior(model, mnist_test_loader, args.prior_plot)
+
 
         elif args.mode == 'plot_prior_posterior':
             plot_prior_posterior(model, mnist_test_loader, device, args.prior_posterior_plot)
