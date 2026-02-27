@@ -134,7 +134,7 @@ class VAE(nn.Module):
     """
     Define a Variational Autoencoder (VAE) model.
     """
-    def __init__(self, prior, decoder, encoder):
+    def __init__(self, prior, decoder, encoder, beta=1.0):
         """
         Parameters:
         prior: [torch.nn.Module]
@@ -143,12 +143,15 @@ class VAE(nn.Module):
               The decoder distribution over the data space.
         encoder: [torch.nn.Module]
                 The encoder distribution over the latent space.
+        beta: [float]
+              Weight on the KL term (beta=1.0 is standard VAE).
         """
 
         super(VAE, self).__init__()
         self.prior = prior
         self.decoder = decoder
         self.encoder = encoder
+        self.beta = beta
 
     def elbo(self, x):
         """
@@ -168,7 +171,7 @@ class VAE(nn.Module):
             kl = td.kl_divergence(q, prior)
         except NotImplementedError:
             kl = q.log_prob(z) - prior.log_prob(z)
-        return torch.mean(self.decoder(z).log_prob(x) - kl, dim=0)
+        return torch.mean(self.decoder(z).log_prob(x) - self.beta * kl, dim=0)
 
     def sample(self, n_samples=1):
         """
