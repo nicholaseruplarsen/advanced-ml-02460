@@ -45,8 +45,22 @@ class DDPM(nn.Module):
             The negative ELBO of the batch of dimension `(batch_size,)`.
         """
 
-        ### Implement Algorithm 1 here ###
-        neg_elbo = 0
+        # Sample random timesteps for each item in the batch
+        t = torch.randint(0, self.T, (x.shape[0],), device=x.device)
+
+        # Sample noise
+        epsilon = torch.randn_like(x)
+
+        # Compute noised input: x_t = sqrt(alpha_cumprod[t]) * x + sqrt(1 - alpha_cumprod[t]) * epsilon
+        alpha_cumprod_t = self.alpha_cumprod[t].unsqueeze(-1)  # (batch_size, 1)
+        x_t = torch.sqrt(alpha_cumprod_t) * x + torch.sqrt(1 - alpha_cumprod_t) * epsilon
+
+        # Predict noise
+        t_normalized = t.unsqueeze(-1).float() / self.T  # (batch_size, 1)
+        epsilon_hat = self.network(x_t, t_normalized)
+
+        # MSE per sample
+        neg_elbo = torch.sum((epsilon - epsilon_hat) ** 2, dim=-1)
 
         return neg_elbo
 
@@ -66,8 +80,20 @@ class DDPM(nn.Module):
 
         # Sample x_t given x_{t+1} until x_0 is sampled
         for t in range(self.T-1, -1, -1):
-            ### Implement the remaining of Algorithm 2 here ###
-            pass
+            t_tensor = torch.full((shape[0], 1), t / self.T, device=x_t.device)
+            epsilon_hat = self.network(x_t, t_tensor)
+
+            # Compute mean: mu = (1/sqrt(alpha_t)) * (x_t - beta_t / sqrt(1 - alpha_cumprod_t) * epsilon_hat)
+            alpha_t = self.alpha[t]
+            beta_t = self.beta[t]
+            alpha_cumprod_t = self.alpha_cumprod[t]
+            mu = (1 / torch.sqrt(alpha_t)) * (x_t - (beta_t / torch.sqrt(1 - alpha_cumprod_t)) * epsilon_hat)
+
+            # Add noise for t > 0
+            if t > 0:
+                x_t = mu + torch.sqrt(beta_t) * torch.randn_like(x_t)
+            else:
+                x_t = mu
 
         return x_t
 
@@ -175,22 +201,32 @@ if __name__ == "__main__":
     for key, value in sorted(vars(args).items()):
         print(key, '=', value)
 
-    # Generate the data
-    n_data = 10000000
-    toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
-    transform = lambda x: (x-0.5)*2.0
-    train_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
-    test_loader = torch.utils.data.DataLoader(transform(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
-
-    # Get the dimension of the dataset
-    D = next(iter(train_loader)).shape[1]
-
-    # Define the network
-    num_hidden = 64
-    network = FcNetwork(D, num_hidden)
-
     # Set the number of steps in the diffusion process
     T = 1000
+
+    if args.data == 'mnist':
+        # MNIST dataset (continuous, scaled to [-1, 1])
+        transform = transforms.Compose([
+            transforms.ToTensor(),
+            transforms.Lambda(lambda x: (x - 0.5) * 2.0),  # scale to [-1, 1]
+            transforms.Lambda(lambda x: x.view(-1)),  # flatten to 784
+        ])
+        train_loader = torch.utils.data.DataLoader(
+            datasets.MNIST('data/', train=True, download=True, transform=transform),
+            batch_size=args.batch_size, shuffle=True)
+
+        from unet import Unet
+        network = Unet()
+    else:
+        # Toy data
+        n_data = 10000000
+        toy = {'tg': ToyData.TwoGaussians, 'cb': ToyData.Chequerboard}[args.data]()
+        toy_transform = lambda x: (x-0.5)*2.0
+        train_loader = torch.utils.data.DataLoader(toy_transform(toy().sample((n_data,))), batch_size=args.batch_size, shuffle=True)
+
+        D = next(iter(train_loader)).shape[1]
+        num_hidden = 64
+        network = FcNetwork(D, num_hidden)
 
     # Define model
     model = DDPM(network, T=T).to(args.device)
@@ -216,21 +252,24 @@ if __name__ == "__main__":
         # Generate samples
         model.eval()
         with torch.no_grad():
-            samples = (model.sample((10000,D))).cpu() 
+            if args.data == 'mnist':
+                samples = model.sample((64, 784)).cpu()
+                samples = samples / 2 + 0.5  # scale back to [0, 1]
+                samples = samples.clamp(0, 1)
+                save_image(samples.view(64, 1, 28, 28), args.samples)
+            else:
+                samples = (model.sample((10000, D))).cpu()
+                samples = samples / 2 + 0.5
 
-        # Transform the samples back to the original space
-        samples = samples /2 + 0.5
+                coordinates = [[[x,y] for x in np.linspace(*toy.xlim, 1000)] for y in np.linspace(*toy.ylim, 1000)]
+                prob = torch.exp(toy().log_prob(torch.tensor(coordinates)))
 
-        # Plot the density of the toy data and the model samples
-        coordinates = [[[x,y] for x in np.linspace(*toy.xlim, 1000)] for y in np.linspace(*toy.ylim, 1000)]
-        prob = torch.exp(toy().log_prob(torch.tensor(coordinates)))
-
-        fig, ax = plt.subplots(1, 1, figsize=(7, 5))
-        im = ax.imshow(prob, extent=[toy.xlim[0], toy.xlim[1], toy.ylim[0], toy.ylim[1]], origin='lower', cmap='YlOrRd')
-        ax.scatter(samples[:, 0], samples[:, 1], s=1, c='black', alpha=0.5)
-        ax.set_xlim(toy.xlim)
-        ax.set_ylim(toy.ylim)
-        ax.set_aspect('equal')
-        fig.colorbar(im)
-        plt.savefig(args.samples)
-        plt.close()
+                fig, ax = plt.subplots(1, 1, figsize=(7, 5))
+                im = ax.imshow(prob, extent=[toy.xlim[0], toy.xlim[1], toy.ylim[0], toy.ylim[1]], origin='lower', cmap='YlOrRd')
+                ax.scatter(samples[:, 0], samples[:, 1], s=1, c='black', alpha=0.5)
+                ax.set_xlim(toy.xlim)
+                ax.set_ylim(toy.ylim)
+                ax.set_aspect('equal')
+                fig.colorbar(im)
+                plt.savefig(args.samples)
+                plt.close()
