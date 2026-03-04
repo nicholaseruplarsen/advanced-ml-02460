@@ -298,39 +298,40 @@ def plot_prior(model, data_loader, output_file):
 
 
 def plot_prior_posterior(model, data_loader, device, output_file):
-    """Plot prior samples against aggregate posterior samples.
+    """Plot prior samples against aggregate posterior samples (posterior coloured by class).
 
-    For M > 2, project to 2D with PCA.
+    For M > 2, projects to 2D with t-SNE.
     """
     model.eval()
-    posterior = []
+    posterior, labels = [], []
     n_total = 0
     with torch.no_grad():
-        for x, _ in data_loader:
+        for x, y in data_loader:
             x = x.to(device)
             z = model.encoder(x).sample()
             posterior.append(z.cpu())
+            labels.append(y)
             n_total += z.size(0)
-            # breakpoint()
-        # breakpoint()
     posterior = torch.cat(posterior, dim=0).numpy()
+    labels = torch.cat(labels).numpy()
 
     with torch.no_grad():
         prior = model.prior().sample(torch.Size([n_total])).cpu().numpy()
 
     if posterior.shape[1] > 2:
         both = np.concatenate([posterior, prior], axis=0)
-        both_2d = PCA(n_components=2).fit_transform(both)
+        both_2d = TSNE(n_components=2).fit_transform(both)
         n_post = len(posterior)
         posterior = both_2d[:n_post]
         prior = both_2d[n_post:]
 
     plt.figure(figsize=(8, 6))
-    plt.scatter(prior[:, 0], prior[:, 1], s=1, alpha=0.35, label='Prior samples')
-    plt.scatter(posterior[:, 0], posterior[:, 1], s=1, alpha=0.35, label='Posterior samples')
+    plt.scatter(prior[:, 0], prior[:, 1], s=1, alpha=0.3, color='gray', label='Prior')
+    sc = plt.scatter(posterior[:, 0], posterior[:, 1], s=1, alpha=0.4, c=labels, cmap='tab10', label='Posterior')
+    plt.colorbar(sc, ticks=range(10), label='Class')
     plt.xlabel('z1')
     plt.ylabel('z2')
-    plt.legend(loc='best')
+    plt.legend(loc='best', markerscale=5)
     plt.savefig(output_file, dpi=150, bbox_inches='tight')
     plt.close()
     print(f'Prior vs posterior plot saved to {output_file}')
@@ -376,6 +377,10 @@ if __name__ == "__main__":
                         help='use fixed variance (0.5) in Gaussian decoder instead of learned')
     parser.add_argument('--continuous', action='store_true',
                         help='use continuous MNIST instead of binarised')
+    parser.add_argument('--runs', type=int, default=1, metavar='N',
+                        help='number of independent train+evaluate runs; reports mean±std when >1 (default: %(default)s)')
+    parser.add_argument('--elbo-out', type=str, default=None,
+                        help='file to append ELBO results to (only used when --runs > 1)')
 
     args = parser.parse_args()
     print('# Options')
@@ -440,11 +445,42 @@ if __name__ == "__main__":
     encoder = GaussianEncoder(encoder_net)
     model = VAE(prior, decoder, encoder).to(device)
 
+    def build_model():
+        if args.prior == 'mog':
+            p = MoGPrior(M, args.num_components)
+        elif args.prior == 'flow':
+            p = FlowPrior(M, n_transformations=args.flow_layers, n_hidden=args.flow_hidden)
+        else:
+            p = GaussianPrior(M)
+        enc_net = nn.Sequential(nn.Flatten(), nn.Linear(784,512), nn.ReLU(),
+                                nn.Linear(512,512), nn.ReLU(), nn.Linear(512,M*2))
+        dec_net = nn.Sequential(nn.Linear(M,512), nn.ReLU(), nn.Linear(512,512), nn.ReLU(),
+                                nn.Linear(512,784), nn.Unflatten(-1,(28,28)))
+        dec = GaussianDecoder(dec_net, fixed_std=0.5 if args.fixed_var else None) \
+              if args.decoder == 'gaussian' else BernoulliDecoder(dec_net)
+        return VAE(p, dec, GaussianEncoder(enc_net)).to(device)
+
     # Choose mode to run
     if args.mode == 'train':
-        optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
-        train(model, optimizer, mnist_train_loader, args.epochs, args.device)
-        torch.save(model.state_dict(), args.model)
+        if args.runs == 1:
+            optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+            train(model, optimizer, mnist_train_loader, args.epochs, args.device)
+            torch.save(model.state_dict(), args.model)
+        else:
+            elbos = []
+            for i in range(args.runs):
+                print(f'\n--- Run {i+1}/{args.runs} ---')
+                m = build_model()
+                opt = torch.optim.Adam(m.parameters(), lr=1e-3)
+                train(m, opt, mnist_train_loader, args.epochs, args.device)
+                elbo = evaluate(m, mnist_test_loader, args.device)
+                elbos.append(elbo)
+                print(f'Run {i+1} ELBO: {elbo:.4f}')
+            mean, std = float(np.mean(elbos)), float(np.std(elbos))
+            print(f'\n{args.prior} ELBO: {mean:.4f} ± {std:.4f}  (n={args.runs})')
+            if args.elbo_out:
+                with open(args.elbo_out, 'a') as f:
+                    f.write(f'{args.prior}\t{mean:.4f}\t{std:.4f}\t{elbos}\n')
 
     else:
         model.load_state_dict(torch.load(args.model, map_location=torch.device(args.device)))

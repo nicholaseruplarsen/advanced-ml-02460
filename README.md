@@ -97,6 +97,22 @@ for beta in 1e-6 1e-3 1e-1 1.0; do
 done
 ```
 
+## Evaluation
+
+Trains each VAE prior 5 times and writes mean ± std test ELBO to `report/Figures/ELBO.txt`:
+
+```bash
+for prior in gaussian mog flow; do
+  uv run python src/vae_bernoulli.py train --prior $prior --runs 5 --elbo-out report/Figures/ELBO.txt --device cuda
+done
+```
+
+Computes FID scores and sampling speeds for all models, generates the latent-space prior/posterior plot, and writes results to `report/Figures/summary.txt`:
+
+```bash
+uv run python src/report_metrics.py
+```
+
 ## Report
 
 Source: `report/template.tex` (bibliography: `report/template.bib`)
