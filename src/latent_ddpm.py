@@ -1,12 +1,4 @@
-"""
-Latent DDPM: Train a DDPM in the latent space of a β-VAE with Gaussian likelihood.
-
-Workflow:
-1. Train a β-VAE (Gaussian decoder) on continuous MNIST
-2. Encode training data into latent space
-3. Train a DDPM (FcNetwork) on the latent vectors
-4. Sample: DDPM generates latents → β-VAE decoder produces images
-"""
+"""Latent DDPM: train a DDPM in the latent space of a β-VAE (Gaussian likelihood)."""
 
 import argparse
 import torch

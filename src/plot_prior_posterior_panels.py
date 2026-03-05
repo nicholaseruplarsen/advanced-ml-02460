@@ -15,7 +15,7 @@ from flow import FlowPrior
 from vae_bernoulli import BernoulliDecoder, GaussianEncoder, GaussianPrior, MoGPrior, VAE
 
 
-def default_device() -> str:
+def default_device():
     if torch.cuda.is_available():
         return "cuda"
     if torch.backends.mps.is_available():
@@ -23,23 +23,22 @@ def default_device() -> str:
     return "cpu"
 
 
-def resolve_checkpoint(path_arg: str | None, candidates: list[str], name: str) -> Path:
+def resolve_checkpoint(path_arg, candidates, name):
     if path_arg:
         p = Path(path_arg)
         if not p.exists():
             raise FileNotFoundError(f"Checkpoint for {name} not found: {p}")
         return p
 
-    for candidate in candidates:
-        p = Path(candidate)
+    for c in candidates:
+        p = Path(c)
         if p.exists():
             return p
 
-    joined = ", ".join(candidates)
-    raise FileNotFoundError(f"Checkpoint for {name} not found. Tried: {joined}")
+    raise FileNotFoundError(f"Checkpoint for {name} not found. Tried: {candidates}")
 
 
-def build_vae(prior_name: str, latent_dim: int, num_components: int, flow_layers: int, flow_hidden: int) -> VAE:
+def build_vae(prior_name, latent_dim, num_components, flow_layers, flow_hidden):
     if prior_name == "gaussian":
         prior = GaussianPrior(latent_dim)
     elif prior_name == "mog":
@@ -206,22 +205,13 @@ def main():
         "text.color": "#222222",
     })
 
-    # Vivid 10-class palette — more saturated than tab10
     vivid_colors = [
-        "#3A86FF",  # 0 bright blue
-        "#FF6B35",  # 1 vivid orange
-        "#2DC653",  # 2 vivid green
-        "#E63946",  # 3 vivid red
-        "#9B5DE5",  # 4 purple
-        "#8B4513",  # 5 brown
-        "#F72585",  # 6 hot pink
-        "#606060",  # 7 dark grey
-        "#C5A800",  # 8 golden yellow
-        "#00B4D8",  # 9 cyan
+        "#3A86FF", "#FF6B35", "#2DC653", "#E63946", "#9B5DE5",
+        "#8B4513", "#F72585", "#606060", "#C5A800", "#00B4D8",
     ]
     cmap = ListedColormap(vivid_colors)
     norm = BoundaryNorm(np.arange(-0.5, 10.5, 1), 10)
-    contour_color = "#1a1a2e"  # deep navy — dark and neutral, visible on any bg
+    contour_color = "#1a1a2e"
 
     fig, axes = plt.subplots(1, 3, figsize=(15, 5), constrained_layout=True)
     scatter_for_colorbar = None
