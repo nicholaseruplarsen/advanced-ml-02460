@@ -181,12 +181,12 @@ def elbo(self, x):
     q = self.encoder(x)
     z = q.rsample()
     prior = self.prior()
-    # Analytic KL for Gaussian prior; MC fallback for MoG/Flow
+    # Use analytic KL when available (Gaussian prior), fall back to MC for MoG
     try:
         kl = td.kl_divergence(q, prior)
     except NotImplementedError:
         kl = q.log_prob(z) - prior.log_prob(z)
-    return torch.mean(self.decoder(z).log_prob(x) - self.beta * kl)
+    return torch.mean(self.decoder(z).log_prob(x) - self.beta * kl, dim=0)
 \end{lstlisting}
 
 \subsection*{2. Affine coupling layer (RealNVP-style flow)}
@@ -224,12 +224,12 @@ over data dimensions.
 def negative_elbo(self, x):
     t = torch.randint(0, self.T, (x.shape[0],), device=x.device)
     epsilon = torch.randn_like(x)
-    alpha_bar_t = self.alpha_cumprod[t].unsqueeze(-1)
-    x_t = torch.sqrt(alpha_bar_t) * x \
-        + torch.sqrt(1 - alpha_bar_t) * epsilon
-    t_norm = t.unsqueeze(-1).float() / self.T
-    epsilon_hat = self.network(x_t, t_norm)
-    return torch.sum((epsilon - epsilon_hat) ** 2, dim=-1)
+    alpha_cumprod_t = self.alpha_cumprod[t].unsqueeze(-1)
+    x_t = torch.sqrt(alpha_cumprod_t) * x + torch.sqrt(1 - alpha_cumprod_t) * epsilon
+    t_normalized = t.unsqueeze(-1).float() / self.T
+    epsilon_hat = self.network(x_t, t_normalized)
+    neg_elbo = torch.sum((epsilon - epsilon_hat) ** 2, dim=-1)
+    return neg_elbo
 \end{lstlisting}
 
 \subsection*{4. DDPM reverse sampling}
@@ -244,13 +244,11 @@ def sample(self, shape):
     for t in range(self.T - 1, -1, -1):
         t_tensor = torch.full((shape[0], 1), t / self.T,
                               device=x_t.device)
-        eps_hat  = self.network(x_t, t_tensor)
-        alpha_t       = self.alpha[t]
-        beta_t        = self.beta[t]
+        epsilon_hat = self.network(x_t, t_tensor)
+        alpha_t = self.alpha[t]
+        beta_t = self.beta[t]
         alpha_cumprod_t = self.alpha_cumprod[t]
-        mu = (1 / torch.sqrt(alpha_t)) * (
-            x_t - (beta_t / torch.sqrt(1 - alpha_cumprod_t)) * eps_hat
-        )
+        mu = (1 / torch.sqrt(alpha_t)) * (x_t - (beta_t / torch.sqrt(1 - alpha_cumprod_t)) * epsilon_hat)
         if t > 0:
             x_t = mu + torch.sqrt(beta_t) * torch.randn_like(x_t)
         else:
@@ -270,7 +268,9 @@ def encode_dataset(vae, data_loader, device):
     latents = []
     with torch.no_grad():
         for x, _ in data_loader:
-            z = vae.encoder(x.to(device)).mean  # use mean, not sample
+            x = x.to(device)
+            q = vae.encoder(x)
+            z = q.mean  # use mean, not sample, for stable training
             latents.append(z.cpu())
     return torch.cat(latents, dim=0)
 
