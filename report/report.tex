@@ -65,26 +65,28 @@ by Marcus Christoffersen (s224750), Bob (s271828) \& Eve (s314159) on 05 March 2
     \subsection*{Part A: VAE Priors}
     % -------------------------------------------------------------------
 
-    We train VAEs on binarised MNIST with three priors: standard Gaussian,
-    a 10-component MoG, and a flow-based prior (8 affine coupling layers).
-    For non-Gaussian priors the KL is estimated via Monte Carlo.
-    Figure~\ref{fig:prior_posterior} shows t-SNE projections of prior and
-    aggregate posterior samples. The Gaussian prior forms a unimodal blob
-    misaligned with the multi-modal posterior; MoG and Flow priors
-    learn to better align with the digit-class structure.
-    Test ELBOs (mean$\pm$std, 5 runs): Gaussian $-88.77\pm0.69$,
-    MoG $-88.16\pm0.67$, Flow $-88.05\pm0.38$.
-    Differences are small, likely because the decoder capacity is
-    the binding constraint: once the reconstruction term is saturated,
-    prior flexibility yields diminishing returns.
-    The flow prior also shows lower variance, suggesting a more stable training objective.
+    We train VAEs with a Bernoulli likelihood on binarised MNIST,
+    using three priors: a standard Gaussian, a 10-component MoG, and a
+    flow (8 affine coupling layers). Encoder and decoder are symmetric
+    3-layer MLPs (784--512--512, $M\!=\!32$, ReLU);
+    for non-Gaussian priors the KL is estimated by Monte Carlo.
 
+    Figure~\ref{fig:prior_posterior} shows expected differences:
+    the Gaussian prior sits as single probability mass over the posterior,
+    where the MoG and Flow priors reshape themselves to track the
+    digit clusters.
+    The test ELBOs however barely separate
+    (Gaussian $-88.8\!\pm\!0.7$,
+     MoG $-88.2\!\pm\!0.7$,
+     Flow $-88.1\!\pm\!0.4$; mean$\pm$std over 5 runs),
+    indicating the shared decoder is the bottleneck:
+    when reconstruction saturates, a more expressive prior has little to improve.
+    The flow prior trains the most stable (lowest variance).
+    
     \begin{figure}[H]
         \centering
-        \includegraphics[width=0.32\columnwidth]{Figures/vae/gauss_prior_posterior}
-        \includegraphics[width=0.32\columnwidth]{Figures/vae/mog_prior_posterior}
-        \includegraphics[width=0.32\columnwidth]{Figures/vae/flow_prior_posterior}
-        \caption{Prior vs.\ aggregate posterior for Gaussian (left), MoG (mid), Flow (right).}
+        \includegraphics[width=\columnwidth]{Figures/vae/prior_posterior_panels}
+        \caption{t-SNE projections of aggregate posterior (coloured by digit class) and prior density contours for Gaussian (left), MoG (middle), and Flow (right) priors.}
         \label{fig:prior_posterior}
     \end{figure}
 
@@ -92,20 +94,40 @@ by Marcus Christoffersen (s224750), Bob (s271828) \& Eve (s314159) on 05 March 2
     \subsection*{Part B: Sampling Quality}
     % -------------------------------------------------------------------
 
-    % TODO: Architecture description + discussion text
-    \lipsum[4]
+    We compare three generative pipelines on continuous MNIST.
+    The \textbf{DDPM} pairs a five-level U-Net
+    (32, 64, 128, 256, 256 channels, skip connections, LogSigmoid, $T\!=\!100$)
+    with a linear noise schedule.
+    The \textbf{latent DDPM} first trains a $\beta$-VAE
+    (same MLP backbone as Part A but with a Gaussian likelihood, $M\!=\!32$),
+    then fits a fully-connected DDPM ($T\!=\!1000$) to the encoder means.
+    At test time it draws latent samples from the diffusion model and
+    pushes them through the frozen decoder.
+
+    Pixel-space DDPM gives the best FID (36.96) but only manages
+    35\,samples/s (Table~\ref{tab:fid}).
+    The Gaussian VAE is $370\times$ faster and not far behind in FID (42.30).
+    Latent DDPM runs diffusion in 32 dimensions instead of 784,
+    increasing throughput to ${\sim}8\text{k}$\,samples/s,
+    though the best FID ($81.91$ at $\beta\!=\!10^{-3}$) lags both baselines.
+    The choice of $\beta$ matters:
+    too small ($10^{-6}$) and the posterior is diffuse, giving the
+    latent DDPM a hard target (FID\,115),
+    too large ($\geq\!0.1$) and reconstruction quality drops
+    (FID\,$>$\,88).
 
     \begin{figure}[H]
         \centering
-        \includegraphics[width=0.28\columnwidth]{Figures/vae/mog_samples_4}
+        \includegraphics[width=0.28\columnwidth]{Figures/vae/gauss_samples_4}
         \includegraphics[width=0.28\columnwidth]{Figures/ddpm/ddpm_samples_4}
         \includegraphics[width=0.28\columnwidth]{Figures/ddpm/latent_ddpm_samples_b1e-3_4}
-        \caption{$2{\times}2$ samples: VAE MoG (left), DDPM U-Net (mid), Latent DDPM $\beta\!=\!10^{-3}$ (right).}
+        \caption{$2{\times}2$ samples: VAE Gaussian (left), DDPM U-Net (mid), Latent DDPM $\beta\!=\!10^{-3}$ (right).}
         \label{fig:samples}
     \end{figure}
 
     \begin{table}[H]
         \caption{FID ($\downarrow$) and sampling speed on standard MNIST ($N\!=\!1000$).}
+        \label{tab:fid}
         \begin{center}
             \begin{tabular}{lcc}
                 \toprule
@@ -129,8 +151,12 @@ by Marcus Christoffersen (s224750), Bob (s271828) \& Eve (s314159) on 05 March 2
         \label{fig:latent_space}
     \end{figure}
 
-    % TODO: Latent space discussion
-    \lipsum[5-6]
+    Fig.~\ref{fig:latent_space} shows the latent space at $\beta\!=\!10^{-6}$:
+    the aggregate posterior (coloured) splits into ten digit clusters
+    that the Gaussian prior (grey) does not match.
+    The DDPM distribution (blue) covers the posterior mass much better,
+    but overall FID remains high (115 vs.\ 42 for the VAE) because
+    at this $\beta$ the decoder itself is the limiting factor.
 
 \end{multicols}
 
