@@ -7,6 +7,7 @@ members = [
     "02460-advanced-ml",
     "assignment-1",
     "assignment-2",
+    "assignment-3",
 ]
 
 [[package]]
@@ -43,6 +44,11 @@ requires-dist = [
 name = "assignment-2"
 version = "0.1.0"
 source = { virtual = "assignment-2" }
+
+[[package]]
+name = "assignment-3"
+version = "0.1.0"
+source = { virtual = "assignment-3" }
 
 [[package]]
 name = "colorama"
