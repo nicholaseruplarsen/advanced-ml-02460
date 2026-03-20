@@ -1,0 +1,317 @@
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[english]{babel}
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[a4paper, margin=2cm]{geometry}
+\usepackage{amsmath,amsfonts,amssymb}
+\usepackage[colorlinks]{hyperref}
+\usepackage{multicol}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{lipsum}
+
+\usepackage[round]{natbib}
+\bibliographystyle{abbrvnat}
+
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhead[L]{02460-2026 Mini-project 1}
+\fancyhead[R]{s224766, s224750, s224175 \& s224233}
+
+% For including code
+% From https://www.overleaf.com/learn/latex/Code_listing
+\usepackage{listings}
+\usepackage{xcolor}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,
+    breaklines=true,
+    captionpos=b,
+    keepspaces=true,
+    numbers=left,
+    numbersep=5pt,
+    showspaces=false,
+    showstringspaces=false,
+    showtabs=false,
+    tabsize=2,
+    upquote=true
+}
+
+\lstset{language=Python, style=mystyle}
+
+\begin{document}
+
+%%% Main text part %%%
+
+\section*{Mini-project 1 in Advanced Machine Learning (02460)}
+by Frederik Svane (s224766), Marcus Christoffersen (s224750), \\
+Nicholas Larsen (s224175) \& Thor Højhus (s224233) on 05 March 2026
+
+\begin{multicols}{2}
+
+    % -------------------------------------------------------------------
+    \subsection*{Part A: VAE Priors}
+    % -------------------------------------------------------------------
+
+    We train VAEs~\citep{kingma2013vae} with a Bernoulli likelihood on
+    binarised MNIST, using three priors: a standard Gaussian, a
+    10-component MoG, and a flow-based prior (8 affine coupling
+    layers~\citep{dinh2017realnvp}). Encoder and decoder are symmetric
+    3-layer MLPs (784--512--512, $M\!=\!32$, ReLU);
+    for non-Gaussian priors the KL is estimated by Monte Carlo.
+
+    Figure~\ref{fig:prior_posterior} shows t-SNE~\citep{maaten2008tsne}
+    projections of the aggregate posterior and prior.
+    The Gaussian prior sits as single probability mass over the posterior,
+    where the MoG and Flow priors reshape themselves to track the
+    digit clusters.
+    The test ELBOs however barely separate
+    (Gaussian $-88.8\!\pm\!0.7$,
+     MoG $-88.2\!\pm\!0.7$,
+     Flow $-88.1\!\pm\!0.4$; mean$\pm$std over 5 runs),
+    indicating the shared decoder is the bottleneck:
+    when reconstruction saturates, a more expressive prior has little to improve.
+    The flow prior trains the most stable (lowest variance).
+    
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=\columnwidth]{Figures/vae/prior_posterior_panels}
+        \caption{t-SNE projections of aggregate posterior (coloured by digit class) and prior density contours for Gaussian (left), MoG (middle), and Flow (right) priors.}
+        \label{fig:prior_posterior}
+    \end{figure}
+
+    % -------------------------------------------------------------------
+    \subsection*{Part B: Sampling Quality}
+    % -------------------------------------------------------------------
+
+    We compare three generative pipelines on continuous MNIST.
+    The \textbf{DDPM}~\citep{ho2020ddpm} pairs a five-level
+    U-Net~\citep{ronneberger2015unet}
+    (32, 64, 128, 256, 256 channels, skip connections, LogSigmoid, $T\!=\!100$)
+    with a linear noise schedule.
+    The \textbf{latent DDPM}~\citep{rombach2022ldm} first trains a $\beta$-VAE
+    (same MLP backbone as Part~A but with a Gaussian likelihood, $M\!=\!32$),
+    then fits a fully-connected DDPM ($T\!=\!1000$) to the encoder means.
+    At test time it draws latent samples from the diffusion model and
+    pushes them through the frozen decoder.
+
+    Pixel-space DDPM gives the best FID~\citep{heusel2017fid} (36.96)
+    but only manages 35\,samples/s (Table~\ref{tab:fid}).
+    The Gaussian VAE is $370\times$ faster and not far behind in FID (42.30).
+    Latent DDPM runs diffusion in 32 dimensions instead of 784,
+    increasing throughput to ${\sim}8\text{k}$\,samples/s,
+    though the best FID ($81.91$ at $\beta\!=\!10^{-3}$) lags both baselines.
+    The choice of $\beta$ matters:
+    too small ($10^{-6}$) and the posterior is diffuse, giving the
+    latent DDPM a hard target (FID\,115),
+    too large ($\geq\!0.1$) and reconstruction quality drops
+    (FID\,$>$\,88).
+
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=0.28\columnwidth]{Figures/vae/gauss_samples_4}
+        \includegraphics[width=0.28\columnwidth]{Figures/ddpm/ddpm_samples_4}
+        \includegraphics[width=0.28\columnwidth]{Figures/ddpm/latent_ddpm_samples_b1e-3_4}
+        \caption{$2{\times}2$ samples: VAE Gaussian (left), DDPM U-Net (mid), Latent DDPM $\beta\!=\!10^{-3}$ (right).}
+        \label{fig:samples}
+    \end{figure}
+
+    \begin{table}[H]
+        \caption{FID ($\downarrow$) and sampling speed on standard MNIST ($N\!=\!1000$).}
+        \label{tab:fid}
+        \begin{center}
+            \begin{tabular}{lcc}
+                \toprule
+                Model & FID & Samp./s \\
+                \midrule
+                VAE (Gaussian)                  & 42.30  & 13{,}179 \\
+                DDPM (U-Net)                    & 36.96  & 35       \\
+                Lat.\ DDPM $\beta\!=\!10^{-6}$  & 115.15 & 8{,}405  \\
+                Lat.\ DDPM $\beta\!=\!10^{-3}$  & 81.91  & 8{,}613  \\
+                Lat.\ DDPM $\beta\!=\!0.1$      & 88.80  & 8{,}584  \\
+                Lat.\ DDPM $\beta\!=\!1$        & 153.18 & 8{,}861  \\
+                \bottomrule
+            \end{tabular}
+        \end{center}
+    \end{table}
+
+    \begin{figure}[H]
+        \centering
+        \includegraphics[width=0.65\columnwidth]{Figures/ddpm/latent_ddpm_prior_posterior}
+        \caption{Latent space ($\beta\!=\!10^{-6}$): Gaussian prior (grey), DDPM latents (blue), aggregate posterior (coloured).}
+        \label{fig:latent_space}
+    \end{figure}
+
+    Fig.~\ref{fig:latent_space} shows the latent space at $\beta\!=\!10^{-6}$:
+    the aggregate posterior (coloured) splits into ten digit clusters
+    that the Gaussian prior (grey) does not match.
+    The DDPM distribution (blue) covers the posterior mass much better,
+    but overall FID remains high (115 vs.\ 42 for the VAE) because
+    at this $\beta$ the decoder itself is the limiting factor.
+
+\end{multicols}
+
+\newpage
+
+%%% Code snippet part %%%
+
+\section*{Code snippets}
+
+\subsection*{1. VAE ELBO with analytic / MC KL fallback}
+
+The \texttt{VAE.elbo} method uses \texttt{torch.distributions.kl\_divergence}
+when closed-form KL is available (Gaussian prior) and falls back to a
+single-sample Monte Carlo estimate $\mathrm{KL} \approx \log q_\phi(z|x) - \log p(z)$
+for the MoG and flow priors.
+
+\begin{lstlisting}[language=Python, caption={VAE ELBO (vae\_bernoulli.py)}]
+def elbo(self, x):
+    q = self.encoder(x)
+    z = q.rsample()
+    prior = self.prior()
+    # Use analytic KL when available (Gaussian prior), fall back to MC for MoG
+    try:
+        kl = td.kl_divergence(q, prior)
+    except NotImplementedError:
+        kl = q.log_prob(z) - prior.log_prob(z)
+    return torch.mean(self.decoder(z).log_prob(x) - self.beta * kl, dim=0)
+\end{lstlisting}
+
+\subsection*{2. Affine coupling layer (RealNVP-style flow)}
+
+Each \texttt{MaskedCouplingLayer} splits dimensions with a binary mask,
+applies scale and translation networks to the masked half, and accumulates
+the log-determinant for density evaluation.
+
+\begin{lstlisting}[language=Python, caption={MaskedCouplingLayer forward pass (flow.py)}]
+def forward(self, z):
+    x_masked = self.mask * z
+    s = self.scale_net(x_masked)
+    t = self.translation_net(x_masked)
+    x = self.mask * z + (1 - self.mask) * (z * torch.exp(s) + t)
+    log_det_J = ((1 - self.mask) * s).sum(dim=1)
+    return x, log_det_J
+
+def inverse(self, x):
+    z_masked = self.mask * x
+    s = self.scale_net(z_masked)
+    t = self.translation_net(z_masked)
+    z = self.mask * x + (1 - self.mask) * ((x - t) * torch.exp(-s))
+    log_det_J = -((1 - self.mask) * s).sum(dim=1)
+    return z, log_det_J
+\end{lstlisting}
+
+\subsection*{3. DDPM negative ELBO}
+
+At each training step a random timestep $t$ is drawn, Gaussian noise
+$\epsilon$ is added to $x_0$ via the closed-form marginal, and the
+network predicts the noise. The loss is the mean squared error summed
+over data dimensions.
+
+\begin{lstlisting}[language=Python, caption={DDPM.negative\_elbo (ddpm.py)}]
+def negative_elbo(self, x):
+    t = torch.randint(0, self.T, (x.shape[0],), device=x.device)
+    epsilon = torch.randn_like(x)
+    alpha_cumprod_t = self.alpha_cumprod[t].unsqueeze(-1)
+    x_t = torch.sqrt(alpha_cumprod_t) * x + torch.sqrt(1 - alpha_cumprod_t) * epsilon
+    t_normalized = t.unsqueeze(-1).float() / self.T
+    epsilon_hat = self.network(x_t, t_normalized)
+    neg_elbo = torch.sum((epsilon - epsilon_hat) ** 2, dim=-1)
+    return neg_elbo
+\end{lstlisting}
+
+\subsection*{4. DDPM reverse sampling}
+
+Starting from $x_T \sim \mathcal{N}(0,I)$, the model iterates the
+DDPM reverse step, adding noise for $t>0$ and returning the clean
+prediction $x_0$ at $t=0$.
+
+\begin{lstlisting}[language=Python, caption={DDPM.sample (ddpm.py)}]
+def sample(self, shape):
+    x_t = torch.randn(shape).to(self.alpha.device)
+    for t in range(self.T - 1, -1, -1):
+        t_tensor = torch.full((shape[0], 1), t / self.T,
+                              device=x_t.device)
+        epsilon_hat = self.network(x_t, t_tensor)
+        alpha_t = self.alpha[t]
+        beta_t = self.beta[t]
+        alpha_cumprod_t = self.alpha_cumprod[t]
+        mu = (1 / torch.sqrt(alpha_t)) * (x_t - (beta_t / torch.sqrt(1 - alpha_cumprod_t)) * epsilon_hat)
+        if t > 0:
+            x_t = mu + torch.sqrt(beta_t) * torch.randn_like(x_t)
+        else:
+            x_t = mu
+    return x_t
+\end{lstlisting}
+
+\subsection*{5. Latent DDPM: encoding and sampling}
+
+The $\beta$-VAE encoder maps training images to latent means; a
+fully-connected DDPM is trained on these vectors. At test time, the
+DDPM samples a latent which the frozen decoder maps to pixel space.
+
+\begin{lstlisting}[language=Python, caption={Latent DDPM encode + sample (latent\_ddpm.py)}]
+def encode_dataset(vae, data_loader, device):
+    vae.eval()
+    latents = []
+    with torch.no_grad():
+        for x, _ in data_loader:
+            x = x.to(device)
+            q = vae.encoder(x)
+            z = q.mean  # use mean, not sample, for stable training
+            latents.append(z.cpu())
+    return torch.cat(latents, dim=0)
+
+# --- training ---
+latents     = encode_dataset(vae, train_loader, device)
+latent_loader = DataLoader(latents, batch_size=B, shuffle=True)
+ddpm = DDPM(FcNetwork(M, hidden), T=T).to(device)
+train_ddpm(ddpm, optimizer, latent_loader, epochs, device)
+
+# --- sampling ---
+with torch.no_grad():
+    z       = ddpm.sample((n, M))
+    samples = vae.decoder(z).mean.clamp(0, 1)
+\end{lstlisting}
+
+\newpage
+
+%%% AI declaration %%%
+
+\section*{Declaration of use of generative AI}
+
+This declaration \textbf{must} be filled out and included as the 3rd page of the document. The questions apply to all parts of the work, including research, project writing, and coding.
+\begin{itemize}
+\item I/we have used generative AI tools: yes
+\end{itemize}
+If you answered \emph{yes}, please complete the following sections. List the generative AI tools you have used:
+\begin{itemize}
+\item Claude 4.6 Opus (via the web interface and the Claude Code CLI)
+\end{itemize}
+Describe how the tools were used:
+\begin{description}
+\item[What did you use the tool(s) for?] Understanding theory behind VAEs, diffusion models, and flow-based priors; checking that our code implementations were correct; and assessing the quality and completeness of our written answers.
+\item[At what stage(s) of the process did you use the tool(s)?] Throughout the project: during initial reading and theory review, during implementation and debugging, and during final report writing and review.
+\item[How did you use or incorporate the generated output?] We used Claude as a discussion partner and reviewer. All code was written by us (except for the given templates) and verified independently. Claude helped us catch errors and clarify our understanding but did not generate code or text that was copied verbatim into the report.
+\end{description}
+
+\newpage
+
+%%% Bibliography %%%
+
+\bibliography{template}
+
+\end{document}

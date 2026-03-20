@@ -9,38 +9,24 @@ dist/
 .python-version
 .uv-cache/
 
-# LaTeX
-tex/*.aux
-tex/*.bbl
-tex/*.blg
-tex/*.log
-tex/*.out
-tex/*.toc
-tex/*.fls
-tex/*.fdb_latexmk
-tex/*.synctex.gz
-tex/*.pdf
-tex/*.xdv
-report/*.aux
-report/*.bbl
-report/*.blg
-report/*.log
-report/*.out
-report/*.toc
-report/*.fls
-report/*.fdb_latexmk
-report/*.synctex.gz
-report/*.xdv
+# LaTeX (match in any subdirectory)
+**/*.aux
+**/*.bbl
+**/*.blg
+**/*.log
+**/*.out
+**/*.toc
+**/*.fls
+**/*.fdb_latexmk
+**/*.synctex.gz
+**/*.xdv
 
-# Model checkpoints — keep .pth files
-!*.pth
+# Model checkpoints
 *.pt
-vae_*.pt
-model.pt
 
 # Generated outputs / local run logs
 .tmp_cmd_logs/
-data/
+**/data/
 samples*.png
 posterior*.png
 

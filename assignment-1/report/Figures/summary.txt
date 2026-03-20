@@ -1,0 +1,10 @@
+========== FID & SAMPLING SPEED SUMMARY ==========
+
+Model                  FID       Sampling speed
+------------------------------------------------------
+VAE (Gaussian)         42.30     13,179 samples/s
+DDPM (U-Net)           36.96     35 samples/s
+Latent DDPM β=1e-6     115.15    8,405 samples/s
+Latent DDPM β=1e-3     81.91     8,613 samples/s
+Latent DDPM β=1e-1     88.80     8,584 samples/s
+Latent DDPM β=1.0      153.18    8,861 samples/s
