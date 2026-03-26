@@ -176,26 +176,24 @@ def compute_geodesic(a, b, decoder, num_points=20, num_epochs=500, lr=1e-2):
         final_curve = torch.cat([a.unsqueeze(0), interior, b.unsqueeze(0)], dim=0)
     return final_curve
 
-def ensemble_curve_energy(curve, decoders):
-    K = len(decoders)
+def ensemble_curve_energy(curve,decoders:list,num_mc_samples:int = 16):
     energy = 0.0
-    for l in range(K):
-        for k in range(K):
-            fl = decoders[l](curve[:-1]).mean
-            fk = decoders[k](curve[1:]).mean
-            energy = energy + (fl - fk).reshape(curve.shape[0] - 1, -1).pow(2).sum()
-    return energy / (K * K)
+    for _ in range(num_mc_samples):
+        l,k=torch.randint(len(decoders),(1,)),torch.randint(len(decoders),(1,))
+        decoded_l,decoded_k=decoders[l](curve[:-1]).mean,decoders[k](curve[1:]).mean
+        energy+=(decoded_l-decoded_k).pow(2).sum()
+    return energy/num_mc_samples
 
-
-def compute_ensemble_geodesic(a, b, decoders, num_points=20, num_epochs=500, lr=1e-2):
+def compute_ensemble_geodesic(a, b, decoders, num_points=20, num_epochs= 500, lr = 1e-2):
     t = torch.linspace(0, 1, num_points, device=a.device).unsqueeze(1)
-    curve = (1 - t) * a + t * b
-    interior = curve[1:-1].clone().detach().requires_grad_(True)
+    curve = (1 - t) * a + t * b # torch magic to make the curve a well designed tensor for fast fast operations
+    
+    interior = curve[1:-1].clone().detach().requires_grad_(True) # have the optimizer look only at the interior points of the pw linear curve, not the fixed start and end points
     optimizer = torch.optim.Adam([interior], lr=lr)
-
+    
     for epoch in range(num_epochs):
         optimizer.zero_grad()
-        full_curve = torch.cat([a.unsqueeze(0), interior, b.unsqueeze(0)], dim=0)
+        full_curve = torch.cat([a.unsqueeze(0), interior, b.unsqueeze(0)], dim=0)  # connect the start and end points back
         energy = ensemble_curve_energy(full_curve, decoders)
         energy.backward()
         optimizer.step()
@@ -268,7 +266,7 @@ if __name__ == "__main__":
         "mode",
         type=str,
         default="train",
-        choices=["train", "sample", "eval", "geodesics", "cov"],
+        choices=["train", "sample", "eval", "geodesics", "ensemble", "cov"],
         help="what to do when running the script (default: %(default)s)",
     )
     parser.add_argument(
@@ -294,7 +292,7 @@ if __name__ == "__main__":
     parser.add_argument(
         "--batch-size",
         type=int,
-        default=32,
+        default=64,
         metavar="N",
         help="batch size for training (default: %(default)s)",
     )
@@ -652,4 +650,48 @@ if __name__ == "__main__":
         cov_path = os.path.join(base_dir, args.experiment_folder, 'cov_plot.png')
         plt.savefig(cov_path, dpi=150, bbox_inches='tight')
         print(f"Saved CoV plot to {cov_path}")
+        plt.show()
+
+    elif args.mode == "ensemble":
+        # train a single VAE with an ensemble of decoders (shared encoder/prior)
+        model = VAE(
+            GaussianPrior(M),
+            GaussianDecoder(new_decoder()),
+            GaussianEncoder(new_encoder()),
+        ).to(device)
+
+        decoders = []
+        for i in range(args.num_decoders):
+            print(f"training decoder {i+1}/{args.num_decoders}")
+            model.decoder = GaussianDecoder(new_decoder()).to(device)
+            optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
+            train(model, optimizer, mnist_train_loader, args.epochs_per_decoder, args.device)
+            decoders.append(deepcopy(model.decoder))
+
+        # compute ensemble geodesics
+        model.eval()
+        x = next(iter(mnist_test_loader))[0].to(device)
+        z = model.encoder(x).mean.detach()
+
+        pairs = torch.randperm(len(z))[:50].reshape(25, 2)
+        geodesics = []
+        for i in tqdm(range(25), desc="Computing ensemble geodesics"):
+            a = z[pairs[i, 0]]
+            b = z[pairs[i, 1]]
+            geodesics.append(compute_ensemble_geodesic(a, b, decoders))
+
+        # plot
+        fig, ax = plt.subplots(figsize=(8, 8))
+        with torch.no_grad():
+            all_x, all_y = [], []
+            for batch_x, batch_y in mnist_test_loader:
+                batch_z = model.encoder(batch_x.to(device)).mean
+                all_x.append(batch_z.cpu())
+                all_y.append(batch_y)
+            all_z = torch.cat(all_x)
+            all_labels = torch.cat(all_y)
+        ax.scatter(all_z[:, 0], all_z[:, 1], c=all_labels, cmap='tab10', alpha=0.3, s=10)
+        for curve in geodesics:
+            curve_np = curve.detach().cpu().numpy()
+            ax.plot(curve_np[:, 0], curve_np[:, 1], 'r-', linewidth=1.5)
         plt.show()
