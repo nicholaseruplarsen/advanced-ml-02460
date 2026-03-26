@@ -654,6 +654,9 @@ if __name__ == "__main__":
 
     elif args.mode == "ensemble":
         # train a single VAE with an ensemble of decoders (shared encoder/prior)
+        experiments_folder = os.path.join(base_dir, args.experiment_folder)
+        os.makedirs(experiments_folder, exist_ok=True)
+
         model = VAE(
             GaussianPrior(M),
             GaussianDecoder(new_decoder()),
@@ -667,6 +670,9 @@ if __name__ == "__main__":
             optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
             train(model, optimizer, mnist_train_loader, args.epochs_per_decoder, args.device)
             decoders.append(deepcopy(model.decoder))
+            torch.save(model.decoder.state_dict(), f"{experiments_folder}/decoder_{i}.pt")
+
+        torch.save(model.encoder.state_dict(), f"{experiments_folder}/encoder.pt")
 
         # compute ensemble geodesics
         model.eval()
