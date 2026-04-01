@@ -179,8 +179,8 @@ def compute_geodesic(a, b, decoder, num_points=20, num_epochs=500, lr=1e-2):
 def ensemble_curve_energy(curve,decoders:list,num_mc_samples:int = 16):
     energy = 0.0
     for _ in range(num_mc_samples):
-        l,k=torch.randint(len(decoders),(1,)),torch.randint(len(decoders),(1,))
-        decoded_l,decoded_k=decoders[l](curve[:-1]).mean,decoders[k](curve[1:]).mean
+        l, k = torch.randint(len(decoders), (1,)).item(), torch.randint(len(decoders), (1,)).item()
+        decoded_l, decoded_k = decoders[l](curve[:-1]).mean, decoders[k](curve[1:]).mean
         energy+=(decoded_l-decoded_k).pow(2).sum()
     return energy/num_mc_samples
 
