@@ -1,4 +1,3 @@
-# %%
 import torch
 import networkx as nx
 from data import empirical_size_distribution, edge_density_per_size

@@ -1,4 +1,3 @@
-# %%
 import torch
 from torch_geometric.loader import DataLoader
 from data import load_mutag, NODE_FEATURE_DIM
@@ -6,12 +5,10 @@ from model import VGAE, vgae_loss
 
 device = 'cpu'
 
-# %%
 dataset, train_dataset, val_dataset, test_dataset = load_mutag()
 train_loader = DataLoader(train_dataset, batch_size=100, shuffle=True)
 val_loader = DataLoader(val_dataset, batch_size=44)
 
-# %%
 # Estimate pos_weight: training graphs are sparse, so positive edge class is rare.
 # count num_real_pairs vs num_edges across training set
 num_pos = 0
@@ -23,13 +20,11 @@ for d in train_dataset:
 pos_weight = torch.tensor((num_total - num_pos) / max(num_pos, 1), device=device)
 print(f'pos_weight = {pos_weight.item():.2f}')
 
-# %%
 torch.manual_seed(0)
 model = VGAE(node_feature_dim=NODE_FEATURE_DIM, state_dim=64, latent_dim=16, num_message_passing_rounds=4).to(device)
 optimizer = torch.optim.Adam(model.parameters(), lr=1e-3)
 scheduler = torch.optim.lr_scheduler.ExponentialLR(optimizer, gamma=0.995)
 
-# %%
 epochs = 500
 beta_max = 0.1
 beta_warmup = 100
@@ -81,11 +76,10 @@ for epoch in range(epochs):
     if (epoch + 1) % 25 == 0:
         print(f'epoch {epoch+1:4d} | beta={beta:.3f} | train recon={tr_recon:.3f} kl={tr_kl:.3f} | val recon={v_recon:.3f} kl={v_kl:.3f}')
 
-# %%
 torch.save({
     'state_dict': model.state_dict(),
     'train_recons': train_recons, 'train_kls': train_kls,
     'val_recons': val_recons, 'val_kls': val_kls,
     'pos_weight': pos_weight.item(),
-}, 'vgae.pt')
-print('saved vgae.pt')
+}, 'assignment-3/vgae.pt')
+print('saved assignment-3/vgae.pt')

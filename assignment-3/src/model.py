@@ -1,4 +1,3 @@
-# %%
 import torch
 import torch.nn as nn
 from torch_geometric.utils import to_dense_batch, to_dense_adj
@@ -68,9 +67,9 @@ class VGAE(nn.Module):
         logits = self.decoder(z_dense)
         return logits, A, mask, mu_dense, logvar_dense
 
-    def sample(self, n_nodes, device='cpu', logit_shift=0.0):
+    def sample(self, n_nodes, device='cpu', logit_shift=0.0, target_density=None):
         z = torch.randn(1, n_nodes, self.latent_dim, device=device)
-        return self._decode_bernoulli(z, logit_shift)
+        return self._decode_bernoulli(z, logit_shift, target_density)
 
     def sample_conditional(self, x, edge_index, logit_shift=0.0):
         # Encode a real graph and sample a new graph from its node-level posterior.
@@ -82,12 +81,31 @@ class VGAE(nn.Module):
             z = self.reparameterize(mu, logvar).unsqueeze(0)
             return self._decode_bernoulli(z, logit_shift)
 
-    def _decode_bernoulli(self, z, logit_shift=0.0):
+    def _decode_bernoulli(self, z, logit_shift=0.0, target_density=None):
         logits = self.decoder(z)[0] + logit_shift
+        if target_density is not None:
+            logits = logits + density_calibration_shift(logits, target_density)
         probs = torch.sigmoid(logits)
         A = (torch.rand_like(probs) < probs).float()
         A = torch.triu(A, diagonal=1)
         return A + A.t()
+
+
+def density_calibration_shift(logits, target_density, steps=30):
+    # Corrects the global edge rate while preserving pairwise logit ordering.
+    n = logits.shape[0]
+    rows, cols = torch.triu_indices(n, n, 1, device=logits.device)
+    edge_logits = logits[rows, cols]
+    target = torch.as_tensor(target_density, device=logits.device).clamp(1e-4, 1 - 1e-4)
+    lo = edge_logits.new_tensor(-20.0)
+    hi = edge_logits.new_tensor(20.0)
+    for _ in range(steps):
+        mid = (lo + hi) / 2
+        if torch.sigmoid(edge_logits + mid).mean() < target:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
 
 
 def vgae_loss(logits, A, mask, mu_dense, logvar_dense, pos_weight):

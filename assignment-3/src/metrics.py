@@ -1,7 +1,5 @@
-# %%
 import numpy as np
 import networkx as nx
-import matplotlib.pyplot as plt
 
 def wl_hash(G, iterations=3):
     if G.number_of_nodes() == 0:
@@ -31,10 +29,16 @@ def graph_stats(G):
         return [], [], []
     deg = [d for _, d in G.degree()]
     clust = list(nx.clustering(G).values())
-    try:
-        ec = list(nx.eigenvector_centrality_numpy(G, max_iter=1000).values())
-    except Exception:
-        ec = [0.0] * G.number_of_nodes()
+    ec_by_node = {node: 0.0 for node in G.nodes()}
+    for component in nx.connected_components(G):
+        H = G.subgraph(component)
+        if H.number_of_nodes() == 1:
+            continue
+        try:
+            ec_by_node.update(nx.eigenvector_centrality_numpy(H).items())
+        except Exception:
+            ec_by_node.update(nx.eigenvector_centrality(H, max_iter=1000).items())
+    ec = [ec_by_node[node] for node in G.nodes()]
     return deg, clust, ec
 
 def collect_stats(graphs):
@@ -44,36 +48,3 @@ def collect_stats(graphs):
         deg_all.extend(d); clust_all.extend(c); ec_all.extend(e)
     return np.array(deg_all), np.array(clust_all), np.array(ec_all)
 
-def plot_histogram_grid(empirical, baseline, vae, save_path):
-    deg_e, clust_e, ec_e = empirical
-    deg_b, clust_b, ec_b = baseline
-    deg_v, clust_v, ec_v = vae
-
-    deg_max = max(deg_e.max() if len(deg_e) else 1, deg_b.max() if len(deg_b) else 1, deg_v.max() if len(deg_v) else 1)
-    deg_bins = np.arange(0, int(deg_max) + 2) - 0.5
-    clust_bins = np.linspace(0, 1, 21)
-    ec_lo = min(np.min(x) if len(x) else 0 for x in [ec_e, ec_b, ec_v])
-    ec_hi = max(np.max(x) if len(x) else 1 for x in [ec_e, ec_b, ec_v])
-    if ec_hi <= ec_lo:
-        ec_hi = ec_lo + 1.0
-    ec_bins = np.linspace(ec_lo, ec_hi, 21)
-
-    fig, axes = plt.subplots(3, 3, figsize=(10, 8))
-    rows = [('Empirical', deg_e, clust_e, ec_e),
-            ('Baseline (ER)', deg_b, clust_b, ec_b),
-            ('VGAE', deg_v, clust_v, ec_v)]
-    cols = [('Node degree', deg_bins),
-            ('Clustering coef.', clust_bins),
-            ('Eigenvector centrality', ec_bins)]
-    for i, (name, deg, clust, ec) in enumerate(rows):
-        for j, (col_name, bins) in enumerate(cols):
-            data = (deg, clust, ec)[j]
-            ax = axes[i, j]
-            ax.hist(data, bins=bins, density=True, color=['C0','C1','C2'][i], edgecolor='black', linewidth=0.4)
-            if i == 0:
-                ax.set_title(col_name)
-            if j == 0:
-                ax.set_ylabel(name)
-    fig.tight_layout()
-    fig.savefig(save_path, dpi=150)
-    plt.close(fig)
