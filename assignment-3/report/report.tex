@@ -1,0 +1,138 @@
+\documentclass[10pt,a4paper]{article}
+
+\usepackage[english]{babel}
+\usepackage[a4paper, left=2cm, right=2cm, top=2cm, bottom=1.62cm]{geometry}
+\usepackage{amsmath}
+\usepackage{multicol}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{caption}
+\captionsetup{font=footnotesize}
+
+\usepackage[round]{natbib}
+\bibliographystyle{abbrvnat}
+
+\usepackage{fancyhdr}
+\pagestyle{fancy}
+\fancyhead[L]{02460-2026 Mini-project 3}
+\fancyhead[R]{s224766, s224750, s224175 \& s224233}
+
+% For including code
+% From https://www.overleaf.com/learn/latex/Code_listing
+\usepackage{listings}
+\usepackage{xcolor}
+
+\definecolor{codegreen}{rgb}{0,0.6,0}
+\definecolor{codegray}{rgb}{0.5,0.5,0.5}
+\definecolor{codepurple}{rgb}{0.58,0,0.82}
+\definecolor{backcolour}{rgb}{0.95,0.95,0.92}
+
+\lstdefinestyle{mystyle}{
+    backgroundcolor=\color{backcolour},   
+    commentstyle=\color{codegreen},
+    keywordstyle=\color{magenta},
+    numberstyle=\tiny\color{codegray},
+    stringstyle=\color{codepurple},
+    basicstyle=\ttfamily\footnotesize,
+    breakatwhitespace=false,         
+    breaklines=true,                 
+    captionpos=b,                    
+    keepspaces=true,                 
+    numbers=left,                    
+    numbersep=5pt,                  
+    showspaces=false,                
+    showstringspaces=false,
+    showtabs=false,                  
+    tabsize=2,
+    upquote=true
+}
+
+\lstset{language=Python, style=mystyle}
+
+\begin{document}
+
+%%% Main text part %%%
+
+\section*{Mini-project 3 in Advanced Machine Learning (02460)}
+by Frederik Svane (s224766), Marcus Christoffersen (s224750), \\
+Nicholas Larsen (s224175) \& Thor H{\o}jhus (s224233) on 29 April 2026
+
+\begin{multicols}{2}
+\subsection*{Model}
+We model MUTAG adjacency matrices \citep{debnath1991mutag} with a node-latent variational graph autoencoder \citep{kingma2014vae,kipf2016vgae}. The encoder maps the seven atom labels to hidden states and applies four rounds of sum-aggregation message passing:
+\[
+h_i^{r+1}=h_i^r+u_r\!\left(\sum_{j\in\mathcal N(i)} m_r(h_j^r)\right),
+\]
+where $m_r$ and $u_r$ are ReLU MLPs. Linear heads give $(\mu_i,\log\sigma_i^2)$ and $q_\phi(Z\mid X,A)=\prod_i \mathcal N(z_i;\mu_i,\operatorname{diag}\sigma_i^2)$. The decoder is an inner-product link model,
+\[
+p_\theta(A_{ij}=1\mid Z)=\sigma(z_i^\top z_j+b),\qquad i<j,
+\]
+and samples graphs by drawing $N$ from the empirical training-size distribution, $z_i\sim\mathcal N(0,I)$, Bernoulli upper-triangle edges, and symmetrizing. Training minimizes
+\[
+\mathcal L=\operatorname{BCE}_w(A,\hat A)+\beta\,D_{\mathrm{KL}}(q_\phi(Z\mid X,A)\Vert p(Z)),
+\]
+excluding padded nodes and self-loops. We used $d_h=64$, $d_z=16$, $\beta\leq0.1$ with 100-epoch warmup, Adam at $10^{-3}$, learning-rate decay $0.995$, 500 epochs, and positive-edge reweighting for sparsity; at sampling we subtract $\log(w_+)$ from logits to undo the density shift from this weighting.
+
+\subsection*{Baseline and evaluation}
+The baseline is the required Erd\H{o}s--R\'enyi model \citep{erdos1959random}: sample $N$ empirically, estimate $r_N$ from all training graphs with that $N$, then draw $G(N,r_N)$. For each model we generated 1000 graphs. Novelty and uniqueness use NetworkX Weisfeiler--Lehman hashes \citep{shervashidze2011wl} against the 100 training graphs. These hashes test memorization and collapse; the graph-statistic histograms carry most of the sample-quality signal.
+
+\begin{table}[H]
+\centering
+\caption{WL novelty/uniqueness over 1000 generated graphs.}
+\begin{tabular}{lccc}
+\toprule
+Method & Novel & Unique & Novel+unique \\
+\midrule
+Baseline & 100.0\% & 99.9\% & 99.9\% \\
+VGAE & 100.0\% & 100.0\% & 100.0\% \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\subsection*{Results}
+Both models avoid exact memorization under the WL hash, so the more meaningful comparison is structural. We density-calibrate the VGAE prior after correcting for weighted BCE; this keeps the expected edge count comparable to the baseline while preserving the decoder's learned edge ranking. Fig.~\ref{fig:histograms} shows that the VGAE matches the degree scale without relying on independent edges, but it still over-produces triangles and disconnected pieces. The result is therefore not that the VGAE uniformly dominates ER, but that the histogram and sample plots expose what the simple inner-product decoder learns and where it fails.
+\end{multicols}
+
+\begin{figure}[H]
+\centering
+\hspace{-1.8em}
+\begin{minipage}{0.42\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.34\textheight,keepaspectratio]{figures/graph_samples.png}
+\caption{Representative samples; node size is degree}
+\label{fig:samples}
+\end{minipage}\hfill
+\hspace{1.1em}
+\begin{minipage}{0.55\textwidth}
+\centering
+\includegraphics[width=\linewidth,height=0.34\textheight,keepaspectratio]{figures/histograms.png}
+\caption{Histograms over 1000 samples (rows top to bottom: empirical, ER, VGAE-inner, VGAE-MLP), shared bins per column}
+\label{fig:histograms}
+\end{minipage}
+\end{figure}
+
+\newpage
+
+\section*{Code snippets}
+
+
+\newpage
+
+\section*{Declaration of use of generative AI}
+\begin{itemize}
+\item I/we have used generative AI tools: yes
+\end{itemize}
+
+\begin{description}
+\item[What did you use the tool(s) for?]
+\item[At what stage(s) of the process did you use the tool(s)?]
+\item[How did you use or incorporate the generated output?]
+
+\end{description}
+
+\newpage
+
+\bibliography{references}
+
+\end{document}
